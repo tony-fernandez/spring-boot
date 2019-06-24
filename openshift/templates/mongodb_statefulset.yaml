@@ -1,0 +1,189 @@
+apiVersion: v1
+kind: Template
+metadata:
+  creationTimestamp: null
+  name: mongodb-statefulset
+parameters:
+- name: GUID
+  description: Unique GUID for tenant prefix
+  required: true
+- name: MEM_REQUESTS
+  description: Requested memory for pod
+  required: false
+  value: 500Mi
+- name: MEM_LIMITS
+  description: Limit for pod memory
+  required: false
+  value: 1Gi
+- name: CPU_REQUESTS
+  description: Requested CPU for pod
+  required: false
+  value: 500m
+- name: CPU_LIMITS
+  description: Limit for pod CPU
+  required: false
+  value: 1000m
+- name: VOLUME_CAPACITY
+  description: Capacity of persistent volume
+  required: false
+  value: 4G
+- name: REPLICAS
+  description: Number of replicas for statefulset
+  required: false
+  value: "3"
+- name: MONGO_DATABASE
+  description: MongoDB database name
+  value: mongodb
+  required: false
+- name: MONGO_REPLICA_SET
+  description: Mongodb replica set to use
+  value: "rs0"
+  required: false
+- name: MONGO_USER
+  description: MongoDB user account
+  value: "mongodb"
+  required: false
+- name: MONGO_PASSWORD
+  description: MongoDB password
+  from: '[A-Z0-9]{10}'
+  generate: expression 
+- name: MONGO_ADMIN_PASSWORD
+  description: MongoDB admin password
+  from: '[A-Z0-9]{10}'
+  generate: expression 
+- name: MONGO_KEYFILE_VALUE
+  description: MongoDB keyfile value
+  value: "12345678901234567890"
+  required: false
+- name: MONGO_SERVICE_NAME
+  description: Internal MongoDB service name
+  value: mongodb-internal
+  required: false
+
+objects:
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      name: mongodb
+    name: mongodb-internal
+    annotations: 
+      service.alpha.kubernetes.io/tolerate-unready-endpoints: "true"
+  spec:
+    selector:
+      name: mongodb
+    clusterIP: None
+    ports:
+      - name: mongodb
+        port: 27017
+- apiVersion: v1
+  stringData:
+    DB_NAME: ${MONGO_DATABASE}
+    DB_PASSWORD: ${MONGO_PASSWORD}
+    DB_USERNAME: ${MONGO_USER}
+    DB_ADMIN_PASSWORD: ${MONGO_ADMIN_PASSWORD}
+  kind: Secret
+  metadata:
+    annotations:
+      openshift.io/generated-by: OpenShiftNewApp
+      template.openshift.io/expose-database_name: '{.data[''DB_NAME'']}'
+      template.openshift.io/expose-password: '{.data[''DB_PASSWORD'']}'
+      template.openshift.io/expose-username: '{.data[''DB_USERNAME'']}'
+      template.openshift.io/expose-admin-password: '{.data[''DB_ADMIN_PASSWORD'']}'
+    creationTimestamp: null
+    labels:
+      app: mongodb
+      template: mongodb-statefulset
+    name: mongodb
+  type: Opaque
+- kind: StatefulSet
+  apiVersion: apps/v1
+  metadata:
+    name: "mongodb"
+  spec:
+    serviceName: "mongodb-internal"
+    replicas: ${REPLICAS}
+    selector:
+      matchLabels:
+        name: mongodb
+    template:
+      metadata:
+        labels:
+          name: "mongodb"
+      spec:
+        containers:
+          - name: mongo-container
+            image: "registry.access.redhat.com/rhscl/mongodb-34-rhel7:latest"
+            ports:
+              - containerPort: 27017
+            args:
+              - "run-mongod-replication"
+            volumeMounts:
+              - name: mongo-data
+                mountPath: "/var/lib/mongodb/data"
+            env:
+              - name: MONGODB_DATABASE
+                valueFrom:
+                  secretKeyRef:
+                    key: DB_NAME
+                    name: mongodb
+              - name: MONGODB_USER
+                valueFrom:
+                  secretKeyRef:
+                    key: DB_USERNAME
+                    name: mongodb
+              - name: MONGODB_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    key: DB_PASSWORD
+                    name: mongodb
+              - name: MONGODB_ADMIN_PASSWORD
+                valueFrom:
+                  secretKeyRef:
+                    key: DB_ADMIN_PASSWORD
+                    name: mongodb
+              - name: MONGODB_REPLICA_NAME
+                value: ${MONGO_REPLICA_SET}
+              - name: MONGODB_KEYFILE_VALUE
+                value: ${MONGO_KEYFILE_VALUE}
+              - name: MONGODB_SERVICE_NAME
+                value: ${MONGO_SERVICE_NAME}
+            readinessProbe:
+              exec:
+                command:
+                  - stat
+                  - /tmp/initialized
+              failureThreshold: 3
+              initialDelaySeconds: 60
+              periodSeconds: 10
+              successThreshold: 1
+              timeoutSeconds: 1
+            resources:
+              limits:
+                memory: ${MEM_LIMITS}
+                cpu: ${CPU_LIMITS}
+              requests:
+                memory: ${MEM_REQUESTS}
+                cpu: ${CPU_REQUESTS}
+    volumeClaimTemplates:
+      - metadata:
+          name: mongo-data
+          labels:
+            name: "mongodb"
+        spec:
+          accessModes: [ ReadWriteOnce ]
+          resources:
+            requests:
+              storage: ${VOLUME_CAPACITY}
+- apiVersion: v1
+  kind: Service
+  metadata:
+    labels:
+      name: mongodb
+    name: mongodb
+  spec:
+    selector:
+      name: mongodb
+    ports:
+      - name: mongodb
+        port: 27017
