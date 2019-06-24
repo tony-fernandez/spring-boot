@@ -1,6 +1,6 @@
 #!groovy
-// Jenkinsfile for MLBParks
-node('jenkins-slave-appdev') {
+
+node('maven') {
 	echo "GUID: ${GUID}"
     echo "CLUSTER: ${CLUSTER}"
 
