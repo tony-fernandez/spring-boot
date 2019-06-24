@@ -4,9 +4,6 @@ metadata:
   creationTimestamp: null
   name: jenkins
 parameters:
-- name: GUID
-  description: Unique GUID for tenant prefix
-  required: true
 - name: REPO
   description: Git repository URL
   required: true
@@ -329,7 +326,7 @@ objects:
         - name: CLUSTER
           value: ${CLUSTER}
         - name: GUID
-          value: spring-boot
+          value: jenkins
         jenkinsfilePath: Jenkinsfile
       type: JenkinsPipeline
     triggers: {}
